@@ -148,7 +148,7 @@ func demoBudget(ctx context.Context, tools *claude.ToolRegistry) {
 }
 
 // demoHistory shows HistoryConfig keeping the context window bounded.
-func demoHistory(_ context.Context, tools *claude.ToolRegistry) {
+func demoHistory(_ context.Context, _ *claude.ToolRegistry) {
 	// Build a larger tool registry for the CLI agent demo
 	cliTools := claude.NewToolRegistry()
 	claude.RegisterFunc(cliTools, claude.ToolDefinition{
