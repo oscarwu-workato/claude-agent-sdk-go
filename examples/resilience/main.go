@@ -47,12 +47,12 @@ func main() {
 		return fmt.Sprintf(`{"resource":"%s","data":"fetched successfully"}`, input.Resource), nil
 	})
 
-	// A summarise tool with a per-tool retry that never retries — permanent errors stop immediately.
+	// A summarize tool with a per-tool retry that never retries — permanent errors stop immediately.
 	claude.RegisterFunc(tools, claude.ToolDefinition{
-		Name:        "summarise",
-		Description: "Summarise a piece of text",
+		Name:        "summarize",
+		Description: "Summarize a piece of text",
 		InputSchema: claude.ObjectSchema(map[string]any{
-			"text": claude.StringParam("Text to summarise"),
+			"text": claude.StringParam("Text to summarize"),
 		}, "text"),
 		RetryConfig: &claude.RetryConfig{
 			MaxAttempts: 1, // no retry for this tool
@@ -120,12 +120,12 @@ func demoBudget(ctx context.Context, tools *claude.ToolRegistry) {
 		Model: "claude-sonnet-4-20250514",
 		Tools: tools,
 		Budget: &claude.BudgetConfig{
-			MaxTokens:   100_000,           // generous token limit
-			MaxDuration: 30 * time.Second,  // session must finish within 30 seconds
+			MaxTokens:   100_000,          // generous token limit
+			MaxDuration: 30 * time.Second, // session must finish within 30 seconds
 		},
 	})
 
-	events, err := agent.Run(ctx, "Summarise the phrase 'Go is a statically typed language'.")
+	events, err := agent.Run(ctx, "Summarize the phrase 'Go is a statically typed language'.")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func demoBudget(ctx context.Context, tools *claude.ToolRegistry) {
 }
 
 // demoHistory shows HistoryConfig keeping the context window bounded.
-func demoHistory(ctx context.Context, tools *claude.ToolRegistry) {
+func demoHistory(_ context.Context, tools *claude.ToolRegistry) {
 	// Build a larger tool registry for the CLI agent demo
 	cliTools := claude.NewToolRegistry()
 	claude.RegisterFunc(cliTools, claude.ToolDefinition{

@@ -23,7 +23,7 @@ type RetryConfig struct {
 }
 
 // executeWithRetry calls fn up to cfg.MaxAttempts times with exponential backoff.
-// Returns the last error if all attempts fail or ctx is cancelled.
+// Returns the last error if all attempts fail or ctx is canceled.
 func executeWithRetry(ctx context.Context, cfg *RetryConfig, fn func() (string, error)) (string, error) {
 	if cfg == nil || cfg.MaxAttempts <= 1 {
 		return fn()

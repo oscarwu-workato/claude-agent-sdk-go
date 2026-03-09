@@ -120,7 +120,7 @@ func (r *ToolRegistry) ToolRetryConfig(name string) *RetryConfig {
 	if err != nil || tool == nil {
 		return nil
 	}
-	return tool.ToolDefinition.RetryConfig
+	return tool.RetryConfig
 }
 
 // GetHandler returns the handler for the given tool name.
