@@ -176,6 +176,10 @@ func (a *APIAgent) runLoop(ctx context.Context, prompt string, events chan<- Age
 
 	budget := newBudgetTracker(a.budget)
 
+	// Accumulate token usage across turns for final reporting.
+	var totalInputTokens, totalOutputTokens int
+	var totalCacheCreation, totalCacheRead int
+
 	for turn := 0; turn < a.maxTurns; turn++ {
 		select {
 		case <-ctx.Done():
@@ -207,6 +211,12 @@ func (a *APIAgent) runLoop(ctx context.Context, prompt string, events chan<- Age
 			return
 		}
 
+		// Accumulate token usage
+		totalInputTokens += usage.InputTokens
+		totalOutputTokens += usage.OutputTokens
+		totalCacheCreation += usage.CacheCreationInputTokens
+		totalCacheRead += usage.CacheReadInputTokens
+
 		// Record token usage and check budget
 		if err := budget.record(usage.InputTokens, usage.OutputTokens, 0); err != nil {
 			events <- AgentEvent{Type: AgentEventError, Error: err}
@@ -215,7 +225,23 @@ func (a *APIAgent) runLoop(ctx context.Context, prompt string, events chan<- Age
 
 		// No tool calls = done
 		if len(toolCalls) == 0 {
-			events <- AgentEvent{Type: AgentEventComplete}
+			events <- AgentEvent{
+				Type: AgentEventComplete,
+				Result: &ResultMessage{
+					Type:         "result",
+					Subtype:      "success",
+					NumTurns:     turn + 1,
+					StopReason:   "end_turn",
+					InputTokens:  totalInputTokens,
+					OutputTokens: totalOutputTokens,
+					Usage: &ResultUsage{
+						InputTokens:              totalInputTokens,
+						OutputTokens:             totalOutputTokens,
+						CacheCreationInputTokens: totalCacheCreation,
+						CacheReadInputTokens:     totalCacheRead,
+					},
+				},
+			}
 			return
 		}
 
@@ -306,8 +332,10 @@ func (a *APIAgent) buildToolsForQuery(ctx context.Context, query string, events 
 
 // apiTurnUsage holds token counts from a single streaming turn.
 type apiTurnUsage struct {
-	InputTokens  int
-	OutputTokens int
+	InputTokens              int
+	OutputTokens             int
+	CacheCreationInputTokens int
+	CacheReadInputTokens     int
 }
 
 func (a *APIAgent) streamTurn(
@@ -414,6 +442,8 @@ func (a *APIAgent) streamTurn(
 
 		case anthropic.MessageStartEvent:
 			usage.InputTokens = int(e.Message.Usage.InputTokens)
+			usage.CacheCreationInputTokens = int(e.Message.Usage.CacheCreationInputTokens)
+			usage.CacheReadInputTokens = int(e.Message.Usage.CacheReadInputTokens)
 
 		case anthropic.MessageDeltaEvent:
 			usage.OutputTokens = int(e.Usage.OutputTokens)
