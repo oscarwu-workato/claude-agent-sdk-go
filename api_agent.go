@@ -225,22 +225,13 @@ func (a *APIAgent) runLoop(ctx context.Context, prompt string, events chan<- Age
 
 		// No tool calls = done
 		if len(toolCalls) == 0 {
+			stopReason := usage.StopReason
+			if stopReason == "" {
+				stopReason = "end_turn"
+			}
 			events <- AgentEvent{
-				Type: AgentEventComplete,
-				Result: &ResultMessage{
-					Type:         "result",
-					Subtype:      "success",
-					NumTurns:     turn + 1,
-					StopReason:   "end_turn",
-					InputTokens:  totalInputTokens,
-					OutputTokens: totalOutputTokens,
-					Usage: &ResultUsage{
-						InputTokens:              totalInputTokens,
-						OutputTokens:             totalOutputTokens,
-						CacheCreationInputTokens: totalCacheCreation,
-						CacheReadInputTokens:     totalCacheRead,
-					},
-				},
+				Type:   AgentEventComplete,
+				Result: buildAPIResult(turn+1, stopReason, totalInputTokens, totalOutputTokens, totalCacheCreation, totalCacheRead),
 			}
 			return
 		}
@@ -290,8 +281,27 @@ func (a *APIAgent) runLoop(ctx context.Context, prompt string, events chan<- Age
 	}
 
 	events <- AgentEvent{
-		Type:  AgentEventError,
-		Error: fmt.Errorf("max turns (%d) reached", a.maxTurns),
+		Type:   AgentEventError,
+		Error:  fmt.Errorf("max turns (%d) reached", a.maxTurns),
+		Result: buildAPIResult(a.maxTurns, "max_turns", totalInputTokens, totalOutputTokens, totalCacheCreation, totalCacheRead),
+	}
+}
+
+// buildAPIResult constructs a ResultMessage with accumulated token usage.
+func buildAPIResult(numTurns int, stopReason string, inputTokens, outputTokens, cacheCreation, cacheRead int) *ResultMessage {
+	return &ResultMessage{
+		Type:         "result",
+		Subtype:      "success",
+		NumTurns:     numTurns,
+		StopReason:   stopReason,
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		Usage: &ResultUsage{
+			InputTokens:              inputTokens,
+			OutputTokens:             outputTokens,
+			CacheCreationInputTokens: cacheCreation,
+			CacheReadInputTokens:     cacheRead,
+		},
 	}
 }
 
@@ -330,12 +340,13 @@ func (a *APIAgent) buildToolsForQuery(ctx context.Context, query string, events 
 	return tools
 }
 
-// apiTurnUsage holds token counts from a single streaming turn.
+// apiTurnUsage holds token counts and stop reason from a single streaming turn.
 type apiTurnUsage struct {
 	InputTokens              int
 	OutputTokens             int
 	CacheCreationInputTokens int
 	CacheReadInputTokens     int
+	StopReason               string
 }
 
 func (a *APIAgent) streamTurn(
@@ -447,6 +458,7 @@ func (a *APIAgent) streamTurn(
 
 		case anthropic.MessageDeltaEvent:
 			usage.OutputTokens = int(e.Usage.OutputTokens)
+			usage.StopReason = string(e.Delta.StopReason)
 		}
 	}
 
