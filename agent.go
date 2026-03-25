@@ -29,6 +29,9 @@ type AgentEvent struct {
 	// SubagentName identifies which subagent produced this event
 	SubagentName string
 
+	// For todos_updated events
+	Todos []TodoItem
+
 	// For turn_complete events - populated when a MetricsCollector is configured
 	TurnMetrics *TurnMetrics
 }
@@ -48,6 +51,7 @@ const (
 	AgentEventError          AgentEventType = "error"
 	AgentEventComplete       AgentEventType = "complete"
 	AgentEventSkillsSelected AgentEventType = "skills_selected"
+	AgentEventTodosUpdated   AgentEventType = "todos_updated"
 )
 
 // Agent orchestrates Claude with custom tools in an agentic loop.
@@ -65,6 +69,7 @@ type Agent struct {
 	retry          *RetryConfig
 	budget         *BudgetConfig
 	history        *HistoryConfig
+	todoStore      *TodoStore
 
 	mu       sync.Mutex
 	running  bool
@@ -119,6 +124,16 @@ type AgentConfig struct {
 	// History controls conversation history compaction before each LLM call,
 	// preventing unbounded context growth in long sessions.
 	History *HistoryConfig
+
+	// EnableTodos registers the write_todos tool, allowing the agent to
+	// plan its work and track progress via a todo list. The host app
+	// receives AgentEventTodosUpdated events when the list changes.
+	EnableTodos bool
+
+	// TodoStore is an optional pre-existing TodoStore to use. If nil and
+	// EnableTodos is true, a new store is created automatically.
+	// Sharing a store across agents gives the parent visibility into child progress.
+	TodoStore *TodoStore
 }
 
 // NewAgent creates an Agent with the given configuration.
@@ -151,6 +166,16 @@ func NewAgent(cfg AgentConfig) *Agent {
 	// Register Task tool if subagents are configured
 	if cfg.Subagents != nil {
 		registerTaskTool(a.tools, cfg.Subagents, cfg.Options, cfg.Hooks)
+	}
+
+	// Register write_todos tool if enabled
+	if cfg.EnableTodos {
+		ts := cfg.TodoStore
+		if ts == nil {
+			ts = NewTodoStore()
+		}
+		a.todoStore = ts
+		RegisterTodosTool(a.tools, ts, nil)
 	}
 
 	return a
@@ -279,6 +304,23 @@ func (a *Agent) runLoop(ctx context.Context, prompt string, events chan<- AgentE
 
 		// Execute tools and collect results
 		toolResults := a.executeTools(ctx, toolCalls, events)
+
+		// Emit todos update if write_todos succeeded this turn
+		if a.todoStore != nil {
+			for _, tr := range toolResults {
+				if !tr.IsError {
+					for _, tc := range toolCalls {
+						if tc.ID == tr.ToolUseID && tc.Name == TodoToolName {
+							events <- AgentEvent{
+								Type:  AgentEventTodosUpdated,
+								Todos: a.todoStore.List(),
+							}
+							break
+						}
+					}
+				}
+			}
+		}
 
 		// Add tool results to full history
 		for _, tr := range toolResults {
@@ -505,6 +547,11 @@ func (a *Agent) Close() error {
 		a.cancelFn()
 	}
 	return a.client.Close()
+}
+
+// TodoStore returns the agent's TodoStore, or nil if todos are not enabled.
+func (a *Agent) TodoStore() *TodoStore {
+	return a.todoStore
 }
 
 // Send writes a follow-up message to the running agent's stdin.
