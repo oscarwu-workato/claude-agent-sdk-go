@@ -495,7 +495,7 @@ Turns 1–3 are omitted. With `DropToolResults: true`, the tool-result lines in 
 
 ## Todo Tracking
 
-Enable the built-in `write_todos` tool so the agent can plan its work and track progress. The host app receives `AgentEventTodosUpdated` events whenever the list changes.
+Enable the built-in `write_todos` and `read_todos` tools so the agent can plan its work and track progress. The host app receives `AgentEventTodosUpdated` events whenever the list changes. The `read_todos` tool lets the agent refresh its view of pending work after long conversations where earlier context may have been compressed by `HistoryConfig`.
 
 ```go
 agent := claude.NewAPIAgent(claude.APIAgentConfig{
@@ -538,7 +538,7 @@ todos := shared.List()
 | `Description` | `string` | What needs to be done |
 | `Status` | `TodoStatus` | `pending`, `in_progress`, or `completed` |
 | `Priority` | `TodoPriority` | `high`, `medium`, or `low` |
-| `ParentID` | `string` | Optional parent ID for subtasks |
+| `ParentID` | `string` | Optional parent ID for subtasks (validated to exist in same batch) |
 
 ## Subagents
 

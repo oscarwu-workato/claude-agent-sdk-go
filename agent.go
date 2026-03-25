@@ -168,14 +168,9 @@ func NewAgent(cfg AgentConfig) *Agent {
 		registerTaskTool(a.tools, cfg.Subagents, cfg.Options, cfg.Hooks)
 	}
 
-	// Register write_todos tool if enabled
+	// Register todo tools if enabled
 	if cfg.EnableTodos {
-		ts := cfg.TodoStore
-		if ts == nil {
-			ts = NewTodoStore()
-		}
-		a.todoStore = ts
-		RegisterTodosTool(a.tools, ts, nil)
+		a.todoStore = initTodoStore(a.tools, cfg.TodoStore)
 	}
 
 	return a
@@ -306,21 +301,7 @@ func (a *Agent) runLoop(ctx context.Context, prompt string, events chan<- AgentE
 		toolResults := a.executeTools(ctx, toolCalls, events)
 
 		// Emit todos update if write_todos succeeded this turn
-		if a.todoStore != nil {
-			for _, tr := range toolResults {
-				if !tr.IsError {
-					for _, tc := range toolCalls {
-						if tc.ID == tr.ToolUseID && tc.Name == TodoToolName {
-							events <- AgentEvent{
-								Type:  AgentEventTodosUpdated,
-								Todos: a.todoStore.List(),
-							}
-							break
-						}
-					}
-				}
-			}
-		}
+		emitTodoEvents(a.todoStore, toolCalls, toolResults, events)
 
 		// Add tool results to full history
 		for _, tr := range toolResults {

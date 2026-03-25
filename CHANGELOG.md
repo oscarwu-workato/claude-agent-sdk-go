@@ -18,8 +18,9 @@ The host app receives `AgentEventTodosUpdated` events whenever the list changes.
 - **Opt-in** — set `EnableTodos: true` on `AgentConfig` or `APIAgentConfig`
 - **Idempotent writes** — the tool replaces the entire list on each call, avoiding partial-update bugs
 - **Shared store** — pass a `TodoStore` to share todo state across parent and child agents
-- **Validation** — rejects items with missing fields or invalid status/priority values
+- **Validation** — rejects items with missing fields, invalid status/priority, duplicate IDs, or dangling `parent_id` references
 - **Live events** — `AgentEventTodosUpdated` carries the full `[]TodoItem` snapshot
+- **Read tool** — `read_todos` lets the agent refresh its view of pending work after history compaction
 
 Configure via `AgentConfig.EnableTodos` or `APIAgentConfig.EnableTodos`:
 
@@ -44,6 +45,8 @@ New field on `AgentEvent`: `Todos []TodoItem`.
 New event type: `AgentEventTodosUpdated`.
 New config fields: `EnableTodos bool`, `TodoStore *TodoStore` (on both `AgentConfig` and `APIAgentConfig`).
 New accessor: `Agent.TodoStore()` / `APIAgent.TodoStore()`.
+New constants: `TodoToolName`, `ReadTodosToolName`.
+New helpers: `RegisterTodosTools`, `initTodoStore`, `emitTodoEvents`, `validateTodos`.
 
 #### Metrics Collection (`MetricsCollector`)
 
