@@ -493,6 +493,53 @@ With `MaxTurns: 3` and a 6-turn history, the LLM receives:
 
 Turns 1–3 are omitted. With `DropToolResults: true`, the tool-result lines in older kept turns are replaced with `[tool result omitted]`.
 
+## Todo Tracking
+
+Enable the built-in `write_todos` tool so the agent can plan its work and track progress. The host app receives `AgentEventTodosUpdated` events whenever the list changes.
+
+```go
+agent := claude.NewAPIAgent(claude.APIAgentConfig{
+    SystemPrompt: "Plan your work using write_todos before starting.",
+    EnableTodos:  true,
+})
+
+events, _ := agent.Run(ctx, "Build a REST API in Go")
+
+for event := range events {
+    if event.Type == claude.AgentEventTodosUpdated {
+        for _, todo := range event.Todos {
+            fmt.Printf("[%s] %s — %s\n", todo.Status, todo.ID, todo.Description)
+        }
+    }
+}
+```
+
+### Shared TodoStore across agents
+
+Pass a pre-existing `TodoStore` to share state between parent and child agents:
+
+```go
+shared := claude.NewTodoStore()
+
+parent := claude.NewAgent(claude.AgentConfig{
+    EnableTodos: true,
+    TodoStore:   shared,
+})
+
+// Read the live todo list at any time
+todos := shared.List()
+```
+
+### TodoItem fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ID` | `string` | Unique identifier |
+| `Description` | `string` | What needs to be done |
+| `Status` | `TodoStatus` | `pending`, `in_progress`, or `completed` |
+| `Priority` | `TodoPriority` | `high`, `medium`, or `low` |
+| `ParentID` | `string` | Optional parent ID for subtasks |
+
 ## Subagents
 
 Subagents allow you to define specialized child agents that can be invoked via a `Task` tool. When you configure subagents, a `Task` tool is automatically registered that Claude can use to delegate work.
@@ -935,6 +982,8 @@ fmt.Println(server.HasTool("greet")) // Check if a tool exists
 | `Retry` | `*RetryConfig` | Global retry policy for tool execution (nil = no retry) |
 | `Budget` | `*BudgetConfig` | Resource limits: tokens, cost, time (nil = unlimited) |
 | `History` | `*HistoryConfig` | History compaction to bound context window (nil = disabled) |
+| `EnableTodos` | `bool` | Register write_todos tool for agent self-planning (default: false) |
+| `TodoStore` | `*TodoStore` | Shared todo store; auto-created if nil and EnableTodos is true |
 
 ### APIAgentConfig
 
@@ -955,6 +1004,8 @@ fmt.Println(server.HasTool("greet")) // Check if a tool exists
 | `Retry` | `*RetryConfig` | Global retry policy for tool execution (nil = no retry) |
 | `Budget` | `*BudgetConfig` | Resource limits: tokens, time (nil = unlimited) |
 | `History` | `*HistoryConfig` | History compaction to bound context window (nil = disabled) |
+| `EnableTodos` | `bool` | Register write_todos tool for agent self-planning (default: false) |
+| `TodoStore` | `*TodoStore` | Shared todo store; auto-created if nil and EnableTodos is true |
 
 ### Built-in Tool Control
 
@@ -1051,6 +1102,7 @@ When streaming, you'll receive events of these types:
 - `AgentEventToolUseDelta` - Tool input streaming
 - `AgentEventToolUseEnd` - Tool invocation complete
 - `AgentEventToolResult` - Tool execution result
+- `AgentEventTodosUpdated` - Todo list changed (includes `Todos []TodoItem`); requires `EnableTodos`
 - `AgentEventTurnComplete` - Turn finished (tool results sent back); includes `TurnMetrics` when a `MetricsCollector` is configured
 - `AgentEventComplete` - Agent finished (includes `Result` with `StopReason`)
 - `AgentEventError` - Error occurred
@@ -1068,6 +1120,7 @@ See the [examples](./examples) directory:
 - [skills](./examples/skills) - Skills, BM25 search, context builder, and dynamic tool selection
 - [metrics](./examples/metrics) - Per-turn LLM latency, per-tool stats, and parallel tool execution
 - [resilience](./examples/resilience) - Retry logic, budget controls, and history compaction
+- [todos](./examples/todos) - Built-in todo tracking with AgentEventTodosUpdated
 
 ---
 
@@ -1148,6 +1201,7 @@ This Go SDK aims for feature parity with the [official Python Claude Agent SDK](
 | Retry logic | - | `RetryConfig` | Go-only: per-tool exponential backoff |
 | Budget controls | - | `BudgetConfig` | Go-only: token, cost, and time limits |
 | History compaction | - | `HistoryConfig` | Go-only: rolling window + tool-result pruning |
+| Todo tracking | - | `EnableTodos` / `TodoStore` | Go-only: built-in write_todos tool for agent self-planning |
 | **Extras** |
 | SSE HTTP helpers | - | `SSEWriter` | Go-only feature |
 | HTTP handler | - | `AgentHTTPHandler` | Go-only feature |
@@ -1167,6 +1221,7 @@ Features available in the Go SDK but not in Python:
 9. **Retry Logic** - `RetryConfig` with exponential backoff, configurable globally or per-tool
 10. **Budget Controls** - `BudgetConfig` with token, cost, and time limits per session
 11. **History Compaction** - `HistoryConfig` rolling window to keep context window bounded
+12. **Todo Tracking** - `EnableTodos` / `TodoStore` for agent self-planning with `AgentEventTodosUpdated` events
 
 ### Python-Specific Features
 

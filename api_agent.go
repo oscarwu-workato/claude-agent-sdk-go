@@ -29,6 +29,7 @@ type APIAgent struct {
 	retry          *RetryConfig
 	budget         *BudgetConfig
 	history        *HistoryConfig
+	todoStore      *TodoStore
 }
 
 // APIAgentConfig configures an API-based agent.
@@ -89,6 +90,15 @@ type APIAgentConfig struct {
 
 	// History controls conversation history compaction before each LLM call.
 	History *HistoryConfig
+
+	// EnableTodos registers the write_todos tool, allowing the agent to
+	// plan its work and track progress via a todo list. The host app
+	// receives AgentEventTodosUpdated events when the list changes.
+	EnableTodos bool
+
+	// TodoStore is an optional pre-existing TodoStore to use. If nil and
+	// EnableTodos is true, a new store is created automatically.
+	TodoStore *TodoStore
 }
 
 // NewAPIAgent creates an agent that uses the Anthropic API.
@@ -140,6 +150,16 @@ func NewAPIAgent(cfg APIAgentConfig) *APIAgent {
 			Model:        cfg.Model,
 			SystemPrompt: cfg.SystemPrompt,
 		}, cfg.Hooks)
+	}
+
+	// Register write_todos tool if enabled
+	if cfg.EnableTodos {
+		ts := cfg.TodoStore
+		if ts == nil {
+			ts = NewTodoStore()
+		}
+		a.todoStore = ts
+		RegisterTodosTool(a.tools, ts, nil)
 	}
 
 	return a
@@ -241,6 +261,19 @@ func (a *APIAgent) runLoop(ctx context.Context, prompt string, events chan<- Age
 
 		// Execute tools
 		toolResults := a.executeTools(ctx, toolCalls, events)
+
+		// Emit todos update if write_todos was called this turn
+		if a.todoStore != nil {
+			for _, tc := range toolCalls {
+				if tc.Name == "write_todos" {
+					events <- AgentEvent{
+						Type:  AgentEventTodosUpdated,
+						Todos: a.todoStore.List(),
+					}
+					break
+				}
+			}
+		}
 
 		// Update lastQuery from tool results so context builder can adapt per turn.
 		// Use the concatenation of tool result content as the next query context.
@@ -480,6 +513,11 @@ func (a *APIAgent) executeTools(
 		return runToolsParallel(ctx, toolCalls, a.tools, a.hooks, a.canUseTool, a.retry, a.metrics, events)
 	}
 	return runToolsSequential(ctx, toolCalls, a.tools, a.hooks, a.canUseTool, a.retry, a.metrics, events)
+}
+
+// TodoStore returns the agent's TodoStore, or nil if todos are not enabled.
+func (a *APIAgent) TodoStore() *TodoStore {
+	return a.todoStore
 }
 
 // RunSync executes the agent and returns all text output.

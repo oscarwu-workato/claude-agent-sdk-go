@@ -10,6 +10,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+#### Todo Tracking (`EnableTodos` / `TodoStore`)
+
+A built-in `write_todos` tool that lets the agent plan and track its own work.
+The host app receives `AgentEventTodosUpdated` events whenever the list changes.
+
+- **Opt-in** — set `EnableTodos: true` on `AgentConfig` or `APIAgentConfig`
+- **Idempotent writes** — the tool replaces the entire list on each call, avoiding partial-update bugs
+- **Shared store** — pass a `TodoStore` to share todo state across parent and child agents
+- **Validation** — rejects items with missing fields or invalid status/priority values
+- **Live events** — `AgentEventTodosUpdated` carries the full `[]TodoItem` snapshot
+
+Configure via `AgentConfig.EnableTodos` or `APIAgentConfig.EnableTodos`:
+
+```go
+agent := claude.NewAPIAgent(claude.APIAgentConfig{
+    EnableTodos: true,
+    // ...
+})
+
+events, _ := agent.Run(ctx, prompt)
+for event := range events {
+    if event.Type == claude.AgentEventTodosUpdated {
+        for _, todo := range event.Todos {
+            fmt.Printf("[%s] %s\n", todo.Status, todo.Description)
+        }
+    }
+}
+```
+
+New types: `TodoItem`, `TodoStatus`, `TodoPriority`, `TodoStore`.
+New field on `AgentEvent`: `Todos []TodoItem`.
+New event type: `AgentEventTodosUpdated`.
+New config fields: `EnableTodos bool`, `TodoStore *TodoStore` (on both `AgentConfig` and `APIAgentConfig`).
+New accessor: `Agent.TodoStore()` / `APIAgent.TodoStore()`.
+
 #### Metrics Collection (`MetricsCollector`)
 
 A new `MetricsCollector` type that gathers per-turn and per-tool execution metrics with zero overhead when not configured.
@@ -141,9 +176,9 @@ New helpers: `compactHistory([]ConversationMessage, *HistoryConfig)`,
 
 ### Changed
 
-- `AgentConfig` gains five new optional fields: `Metrics`, `ParallelTools`, `Retry`, `Budget`, `History`. Zero values preserve existing behavior.
-- `APIAgentConfig` gains the same five fields (`Budget.MaxCostUSD` is a no-op for APIAgent).
-- `AgentEvent` gains one new optional field: `TurnMetrics *TurnMetrics`. Nil unless `MetricsCollector` is configured.
+- `AgentConfig` gains seven new optional fields: `Metrics`, `ParallelTools`, `Retry`, `Budget`, `History`, `EnableTodos`, `TodoStore`. Zero values preserve existing behavior.
+- `APIAgentConfig` gains the same seven fields (`Budget.MaxCostUSD` is a no-op for APIAgent).
+- `AgentEvent` gains two new optional fields: `TurnMetrics *TurnMetrics` (nil unless `MetricsCollector` is configured) and `Todos []TodoItem` (nil unless `EnableTodos` is set).
 - `AgentEventTurnComplete` now carries `TurnMetrics` when a collector is active.
 - `APIAgent.streamTurn` now returns an `apiTurnUsage` value (unexported) so
   token counts are available to the budget tracker.
