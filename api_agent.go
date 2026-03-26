@@ -152,14 +152,9 @@ func NewAPIAgent(cfg APIAgentConfig) *APIAgent {
 		}, cfg.Hooks)
 	}
 
-	// Register write_todos tool if enabled
+	// Register todo tools if enabled
 	if cfg.EnableTodos {
-		ts := cfg.TodoStore
-		if ts == nil {
-			ts = NewTodoStore()
-		}
-		a.todoStore = ts
-		RegisterTodosTool(a.tools, ts, nil)
+		a.todoStore = initTodoStore(a.tools, cfg.TodoStore)
 	}
 
 	return a
@@ -263,21 +258,7 @@ func (a *APIAgent) runLoop(ctx context.Context, prompt string, events chan<- Age
 		toolResults := a.executeTools(ctx, toolCalls, events)
 
 		// Emit todos update if write_todos succeeded this turn
-		if a.todoStore != nil {
-			for _, tr := range toolResults {
-				if !tr.IsError {
-					for _, tc := range toolCalls {
-						if tc.ID == tr.ToolUseID && tc.Name == TodoToolName {
-							events <- AgentEvent{
-								Type:  AgentEventTodosUpdated,
-								Todos: a.todoStore.List(),
-							}
-							break
-						}
-					}
-				}
-			}
-		}
+		emitTodoEvents(a.todoStore, toolCalls, toolResults, events)
 
 		// Update lastQuery from tool results so context builder can adapt per turn.
 		// Use the concatenation of tool result content as the next query context.
