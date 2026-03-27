@@ -40,7 +40,7 @@ func main() {
 
 	// Stream events
 	for event := range events {
-		switch event.Type {
+		switch event.Type { //nolint:exhaustive // Only handling events we care about
 		case claude.AgentEventContentDelta:
 			fmt.Print(event.Content)
 		case claude.AgentEventToolUseStart:
@@ -60,14 +60,14 @@ func main() {
 	}
 	for _, a := range artifacts.All() {
 		ext := ".txt"
-		switch a.Type {
+		switch a.Type { //nolint:exhaustive // text uses default
 		case claude.ArtifactHTML:
 			ext = ".html"
 		case claude.ArtifactJSX:
 			ext = ".jsx"
 		}
 		path := filepath.Join(outDir, a.ID+ext)
-		if err := os.WriteFile(path, []byte(a.Content), 0644); err != nil {
+		if err := os.WriteFile(path, []byte(a.Content), 0600); err != nil {
 			fmt.Printf("Failed to write %s: %v\n", path, err)
 			continue
 		}
