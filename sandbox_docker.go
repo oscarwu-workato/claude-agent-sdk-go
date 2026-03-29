@@ -86,8 +86,8 @@ func (b *DockerBackend) CreateSession(ctx context.Context, opts SessionOptions) 
 		fmt.Sprintf("--memory=%dm", opts.Limits.MemoryMB),
 		"--oom-kill-disable=false",
 		"--cpus=1",
+		image, "sleep", "3600", // keep container alive
 	}
-	args = append(args, image, "sleep", "3600") // keep container alive
 
 	if err := dockerExec(ctx, args...); err != nil {
 		return nil, fmt.Errorf("docker create: %w", err)
