@@ -203,7 +203,7 @@ func (r *SandboxRegistry) getOrCreateSession(ctx context.Context, sessionID stri
 	return sess, nil
 }
 
-func (r *SandboxRegistry) recordExecution(sessionID string, lang Language, code, command string, result *ExecResult) string {
+func (r *SandboxRegistry) recordExecution(sessionID string, lang Language, code, command string, result *ExecResult) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.nextExecID++
@@ -217,7 +217,6 @@ func (r *SandboxRegistry) recordExecution(sessionID string, lang Language, code,
 		Result:    result,
 		CreatedAt: time.Now(),
 	})
-	return id
 }
 
 // Tool handlers

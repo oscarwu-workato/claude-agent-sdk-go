@@ -165,7 +165,7 @@ func (s *dockerSession) Execute(ctx context.Context, code string) (*ExecResult, 
 func (s *dockerSession) executeGoCode(ctx context.Context, code string) (*ExecResult, error) {
 	// Write code via stdin using docker exec, then run it.
 	// Use the parent context directly — dockerExecCmd applies the timeout.
-	writeCmd := exec.CommandContext(ctx, "docker", "exec", "-i", s.containerName,
+	writeCmd := exec.CommandContext(ctx, "docker", "exec", "-i", s.containerName, // #nosec G204 -- sandbox intentionally executes in containers
 		"sh", "-c", "cat > /tmp/main.go")
 	writeCmd.Stdin = strings.NewReader(code)
 	if err := writeCmd.Run(); err != nil {
@@ -180,7 +180,7 @@ func (s *dockerSession) dockerExecCmd(ctx context.Context, cmd string) (*ExecRes
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	execCmd := exec.CommandContext(ctx, "docker", "exec", s.containerName, "sh", "-c", cmd)
+	execCmd := exec.CommandContext(ctx, "docker", "exec", s.containerName, "sh", "-c", cmd) // #nosec G204 -- sandbox intentionally executes in containers
 	var stdout, stderr bytes.Buffer
 	execCmd.Stdout = &stdout
 	execCmd.Stderr = &stderr
@@ -233,7 +233,7 @@ func (s *dockerSession) WriteFile(ctx context.Context, path string, content []by
 	if err != nil {
 		return err
 	}
-	cmd := exec.CommandContext(ctx, "docker", "exec", "-i", s.containerName,
+	cmd := exec.CommandContext(ctx, "docker", "exec", "-i", s.containerName, // #nosec G204 -- sandbox intentionally executes in containers
 		"sh", "-c", fmt.Sprintf("mkdir -p %s && cat > %s",
 			shellQuote(filepath.Dir(fullPath)), shellQuote(fullPath)))
 	cmd.Stdin = bytes.NewReader(content)
@@ -245,7 +245,7 @@ func (s *dockerSession) ReadFile(ctx context.Context, path string) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, "docker", "exec", s.containerName, "cat", fullPath)
+	cmd := exec.CommandContext(ctx, "docker", "exec", s.containerName, "cat", fullPath) // #nosec G204 -- sandbox intentionally executes in containers
 	return cmd.Output()
 }
 
@@ -255,7 +255,7 @@ func (s *dockerSession) ListFiles(ctx context.Context, dir string) ([]SandboxFil
 		return nil, err
 	}
 	// Use ls -la which works on both Alpine (BusyBox) and Debian images.
-	cmd := exec.CommandContext(ctx, "docker", "exec", s.containerName,
+	cmd := exec.CommandContext(ctx, "docker", "exec", s.containerName, // #nosec G204 -- sandbox intentionally executes in containers
 		"sh", "-c", fmt.Sprintf("ls -1ap %s", shellQuote(fullPath)))
 	out, err := cmd.Output()
 	if err != nil {
@@ -284,7 +284,7 @@ func (s *dockerSession) Destroy(_ context.Context) error {
 }
 
 func (s *dockerSession) checkOOMKilled(ctx context.Context) bool {
-	cmd := exec.CommandContext(ctx, "docker", "inspect",
+	cmd := exec.CommandContext(ctx, "docker", "inspect", // #nosec G204 -- container name is internally generated
 		"--format", "{{.State.OOMKilled}}", s.containerName)
 	out, err := cmd.Output()
 	if err != nil {
@@ -295,7 +295,7 @@ func (s *dockerSession) checkOOMKilled(ctx context.Context) bool {
 
 // dockerExec runs a docker command and returns any error.
 func dockerExec(ctx context.Context, args ...string) error {
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", args...) // #nosec G204 -- args are internally constructed
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

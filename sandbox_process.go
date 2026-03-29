@@ -97,7 +97,7 @@ func (s *processSession) Execute(ctx context.Context, code string) (*ExecResult,
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, interpreter, args...)
+	cmd := exec.CommandContext(ctx, interpreter, args...) // #nosec G204 -- sandbox intentionally executes user-provided code
 	cmd.Dir = s.workDir
 
 	var stdout, stderr bytes.Buffer
@@ -148,7 +148,7 @@ func (s *processSession) RunCommand(ctx context.Context, command string) (*ExecR
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := exec.CommandContext(ctx, "sh", "-c", command) // #nosec G204 -- sandbox intentionally executes user-provided commands
 	cmd.Dir = s.workDir
 
 	var stdout, stderr bytes.Buffer
@@ -207,7 +207,7 @@ func (s *processSession) ReadFile(_ context.Context, path string) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(full)
+	return os.ReadFile(full) // #nosec G304 -- path is validated by safePath to stay within sandbox
 }
 
 func (s *processSession) ListFiles(_ context.Context, dir string) ([]SandboxFileInfo, error) {
