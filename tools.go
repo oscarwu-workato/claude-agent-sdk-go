@@ -5,11 +5,33 @@ import (
 	"encoding/json"
 )
 
+// ToolAnnotations provides safety and behavior metadata for a tool.
+// These annotations inform the agent harness about tool properties without
+// changing the tool's execution. They enable per-tool concurrency decisions,
+// deferred loading, and richer permission policies.
+type ToolAnnotations struct {
+	// ReadOnly indicates the tool does not modify any state.
+	ReadOnly bool `json:"read_only,omitempty"`
+	// Destructive indicates the tool makes hard-to-reverse changes.
+	Destructive bool `json:"destructive,omitempty"`
+	// ConcurrencySafe indicates the tool can run in parallel with other
+	// concurrency-safe tools. Tools without this annotation (or with it
+	// set to false) are assumed unsafe for parallel execution.
+	ConcurrencySafe bool `json:"concurrency_safe,omitempty"`
+	// SearchHint is a short keyword phrase (3-10 words) that describes
+	// the tool's capabilities for deferred tool discovery via ToolSearch.
+	SearchHint string `json:"search_hint,omitempty"`
+}
+
 // ToolDefinition describes a tool that can be called by Claude.
 type ToolDefinition struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	InputSchema map[string]any `json:"input_schema"`
+
+	// Annotations provides optional safety and behavior metadata.
+	// If nil, the tool has no annotations and defaults apply.
+	Annotations *ToolAnnotations `json:"annotations,omitempty"`
 
 	// RetryConfig overrides the agent-level retry policy for this specific tool.
 	// If nil, the agent's global RetryConfig is used.
@@ -111,6 +133,24 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, input json.RawM
 func (r *ToolRegistry) Has(name string) bool {
 	tool, err := r.store.GetTool(name)
 	return err == nil && tool != nil
+}
+
+// IsConcurrencySafe returns true if the named tool has ConcurrencySafe annotation.
+func (r *ToolRegistry) IsConcurrencySafe(name string) bool {
+	tool, err := r.store.GetTool(name)
+	if err != nil || tool == nil || tool.Annotations == nil {
+		return false
+	}
+	return tool.Annotations.ConcurrencySafe
+}
+
+// ToolAnnotations returns the annotations for the named tool, or nil.
+func (r *ToolRegistry) ToolAnnotations(name string) *ToolAnnotations {
+	tool, err := r.store.GetTool(name)
+	if err != nil || tool == nil {
+		return nil
+	}
+	return tool.Annotations
 }
 
 // ToolRetryConfig returns the per-tool RetryConfig for the given name, or nil
