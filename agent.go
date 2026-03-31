@@ -259,7 +259,7 @@ func (a *Agent) runLoop(ctx context.Context, prompt string, events chan<- AgentE
 		}
 
 		// Apply history compaction before sending to the LLM
-		llmHistory := compactHistory(history, a.history)
+		llmHistory := compactHistory(ctx, history, a.history)
 
 		// Stream response from Claude, tracking LLM latency
 		llmStart := time.Now()

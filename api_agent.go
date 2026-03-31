@@ -347,7 +347,7 @@ func (a *APIAgent) runLoop(ctx context.Context, prompt string, events chan<- Age
 		}
 
 		// Apply history compaction before sending to the LLM
-		llmMessages := compactMessages(messages, a.history)
+		llmMessages := compactMessages(ctx, messages, a.history)
 
 		// Make streaming API call, tracking LLM latency.
 		// Wrap in a retry loop for max_tokens recovery.

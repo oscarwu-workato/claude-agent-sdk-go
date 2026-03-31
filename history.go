@@ -1,6 +1,15 @@
 package claudeagent
 
-import "github.com/anthropics/anthropic-sdk-go"
+import (
+	"context"
+	"fmt"
+
+	"github.com/anthropics/anthropic-sdk-go"
+)
+
+// HistorySummarizer summarizes a slice of conversation messages into a single
+// summary string. The caller provides the implementation (e.g., calling an LLM).
+type HistorySummarizer func(ctx context.Context, messages []ConversationMessage) (string, error)
 
 // HistoryConfig controls conversation history compaction applied before each
 // LLM call. This prevents the context window from growing unboundedly in
@@ -16,11 +25,21 @@ type HistoryConfig struct {
 	// structure. Has no effect unless MaxTurns > 0 and older turns exist.
 	// Not supported for APIAgent (use MaxTurns only).
 	DropToolResults bool
+
+	// Summarizer, if set, is called to produce a summary of turns that would
+	// otherwise be dropped when MaxTurns is exceeded. The summary is prepended
+	// as a system-context user message after the initial prompt.
+	Summarizer HistorySummarizer
+
+	// SummarizeThreshold is the number of excess turns before summarization
+	// triggers. For example, if MaxTurns=10 and SummarizeThreshold=5, the
+	// summarizer is called when history reaches 15 turns. Default: 0.
+	SummarizeThreshold int
 }
 
 // compactHistory returns a compacted view of the CLI agent's ConversationMessage
 // history. The original slice is never modified.
-func compactHistory(history []ConversationMessage, cfg *HistoryConfig) []ConversationMessage {
+func compactHistory(ctx context.Context, history []ConversationMessage, cfg *HistoryConfig) []ConversationMessage {
 	if cfg == nil || (cfg.MaxTurns == 0 && !cfg.DropToolResults) {
 		return history
 	}
@@ -49,14 +68,37 @@ func compactHistory(history []ConversationMessage, cfg *HistoryConfig) []Convers
 		turns = append(turns, s)
 	}
 
-	// Apply rolling window: keep only the last MaxTurns turns.
+	// Determine which turns to drop and which to keep.
+	var droppedTurns []span
 	if cfg.MaxTurns > 0 && len(turns) > cfg.MaxTurns {
+		droppedTurns = turns[:len(turns)-cfg.MaxTurns]
 		turns = turns[len(turns)-cfg.MaxTurns:]
+	}
+
+	// Optionally summarize dropped turns.
+	var summaryMsg *ConversationMessage
+	if len(droppedTurns) > 0 && cfg.Summarizer != nil && len(droppedTurns) >= cfg.SummarizeThreshold {
+		// Collect dropped messages for the summarizer.
+		var dropped []ConversationMessage
+		for _, t := range droppedTurns {
+			dropped = append(dropped, rest[t.start:t.end]...)
+		}
+		summary, err := cfg.Summarizer(ctx, dropped)
+		if err == nil {
+			summaryMsg = &ConversationMessage{
+				Role:    "user",
+				Content: fmt.Sprintf("[Previous conversation summary]\n%s", summary),
+			}
+		}
+		// On error, fall back to drop behavior (no summary prepended).
 	}
 
 	// Rebuild the compacted history.
 	out := make([]ConversationMessage, 0, len(history))
 	out = append(out, initial)
+	if summaryMsg != nil {
+		out = append(out, *summaryMsg)
+	}
 	for i, t := range turns {
 		isOldTurn := i < len(turns)-1 // all but the most recent turn are "old"
 		for _, msg := range rest[t.start:t.end] {
@@ -78,7 +120,7 @@ func compactHistory(history []ConversationMessage, cfg *HistoryConfig) []Convers
 // Only MaxTurns is applied; DropToolResults is not supported for APIAgent
 // because modifying anthropic.MessageParam tool-result blocks while keeping
 // the tool-use IDs valid is non-trivial and best handled via MaxTurns alone.
-func compactMessages(messages []anthropic.MessageParam, cfg *HistoryConfig) []anthropic.MessageParam {
+func compactMessages(ctx context.Context, messages []anthropic.MessageParam, cfg *HistoryConfig) []anthropic.MessageParam {
 	if cfg == nil || cfg.MaxTurns == 0 {
 		return messages
 	}
@@ -95,6 +137,9 @@ func compactMessages(messages []anthropic.MessageParam, cfg *HistoryConfig) []an
 	if len(rest) <= maxRest {
 		return messages
 	}
+
+	// Summarization for APIAgent can be added in a future iteration;
+	// for now only MaxTurns-based compaction is supported.
 
 	out := make([]anthropic.MessageParam, 0, 1+maxRest)
 	out = append(out, messages[0])

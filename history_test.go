@@ -1,6 +1,8 @@
 package claudeagent
 
 import (
+	"context"
+	"errors"
 	"testing"
 )
 
@@ -16,7 +18,7 @@ func makeHistory(pairs int) []ConversationMessage {
 
 func TestCompactHistoryNilConfig(t *testing.T) {
 	h := makeHistory(5)
-	got := compactHistory(h, nil)
+	got := compactHistory(context.Background(), h, nil)
 	if len(got) != len(h) {
 		t.Errorf("nil config: expected %d messages, got %d", len(h), len(got))
 	}
@@ -24,7 +26,7 @@ func TestCompactHistoryNilConfig(t *testing.T) {
 
 func TestCompactHistoryZeroMaxTurns(t *testing.T) {
 	h := makeHistory(5)
-	got := compactHistory(h, &HistoryConfig{MaxTurns: 0})
+	got := compactHistory(context.Background(), h, &HistoryConfig{MaxTurns: 0})
 	if len(got) != len(h) {
 		t.Errorf("MaxTurns=0: expected %d messages unchanged, got %d", len(h), len(got))
 	}
@@ -33,7 +35,7 @@ func TestCompactHistoryZeroMaxTurns(t *testing.T) {
 func TestCompactHistoryMaxTurnsRollingWindow(t *testing.T) {
 	h := makeHistory(5) // 1 initial + 5*2 = 11 messages total
 
-	got := compactHistory(h, &HistoryConfig{MaxTurns: 2})
+	got := compactHistory(context.Background(), h, &HistoryConfig{MaxTurns: 2})
 
 	// Should be: initial + last 2 turns = 1 + 4 = 5 messages
 	want := 5
@@ -56,7 +58,7 @@ func TestCompactHistoryMaxTurnsRollingWindow(t *testing.T) {
 
 func TestCompactHistoryPreservesAllWhenUnderLimit(t *testing.T) {
 	h := makeHistory(2) // 1 + 4 = 5 messages
-	got := compactHistory(h, &HistoryConfig{MaxTurns: 5})
+	got := compactHistory(context.Background(), h, &HistoryConfig{MaxTurns: 5})
 	if len(got) != len(h) {
 		t.Errorf("under limit: expected all %d messages preserved, got %d", len(h), len(got))
 	}
@@ -65,7 +67,7 @@ func TestCompactHistoryPreservesAllWhenUnderLimit(t *testing.T) {
 func TestCompactHistoryDropToolResults(t *testing.T) {
 	h := makeHistory(3) // 1 + 6 = 7 messages
 
-	got := compactHistory(h, &HistoryConfig{MaxTurns: 2, DropToolResults: true})
+	got := compactHistory(context.Background(), h, &HistoryConfig{MaxTurns: 2, DropToolResults: true})
 
 	// MaxTurns=2: keep last 2 turns (4 messages) + initial = 5
 	// But turn 0 (the now-dropped oldest) is gone.
@@ -100,7 +102,7 @@ func TestCompactHistoryOriginalUnmodified(t *testing.T) {
 	original := make([]ConversationMessage, len(h))
 	copy(original, h)
 
-	compactHistory(h, &HistoryConfig{MaxTurns: 2, DropToolResults: true})
+	compactHistory(context.Background(), h, &HistoryConfig{MaxTurns: 2, DropToolResults: true})
 
 	for i, msg := range h {
 		if msg.Role != original[i].Role || msg.Content != original[i].Content {
@@ -111,8 +113,139 @@ func TestCompactHistoryOriginalUnmodified(t *testing.T) {
 
 func TestCompactHistorySingleMessage(t *testing.T) {
 	h := []ConversationMessage{{Role: "user", Content: "hi"}}
-	got := compactHistory(h, &HistoryConfig{MaxTurns: 1})
+	got := compactHistory(context.Background(), h, &HistoryConfig{MaxTurns: 1})
 	if len(got) != 1 {
 		t.Errorf("single message: expected 1, got %d", len(got))
+	}
+}
+
+// --- Summarizer tests ---
+
+func TestSummarizerCalledWhenExceedsThreshold(t *testing.T) {
+	h := makeHistory(8) // 8 turns
+	called := false
+	summarizer := func(_ context.Context, msgs []ConversationMessage) (string, error) {
+		called = true
+		return "summary of dropped turns", nil
+	}
+
+	cfg := &HistoryConfig{
+		MaxTurns:           3,
+		Summarizer:         summarizer,
+		SummarizeThreshold: 2, // need >= 2 excess turns; we have 5 excess
+	}
+
+	got := compactHistory(context.Background(), h, cfg)
+	if !called {
+		t.Fatal("expected summarizer to be called")
+	}
+
+	// Should have: initial + summary message + 3 kept turns (6 messages) = 8
+	if len(got) != 8 {
+		t.Errorf("expected 8 messages, got %d", len(got))
+	}
+
+	// Second message should be the summary
+	if got[1].Role != "user" {
+		t.Errorf("expected summary message role=user, got %s", got[1].Role)
+	}
+	if got[1].Content != "[Previous conversation summary]\nsummary of dropped turns" {
+		t.Errorf("unexpected summary content: %q", got[1].Content)
+	}
+}
+
+func TestSummarizerNotCalledBelowThreshold(t *testing.T) {
+	h := makeHistory(5) // 5 turns
+	called := false
+	summarizer := func(_ context.Context, msgs []ConversationMessage) (string, error) {
+		called = true
+		return "summary", nil
+	}
+
+	cfg := &HistoryConfig{
+		MaxTurns:           3,
+		Summarizer:         summarizer,
+		SummarizeThreshold: 5, // need >= 5 excess turns; we only have 2
+	}
+
+	compactHistory(context.Background(), h, cfg)
+	if called {
+		t.Fatal("expected summarizer NOT to be called when below threshold")
+	}
+}
+
+func TestSummaryPrependedAsUserMessage(t *testing.T) {
+	h := makeHistory(6) // 6 turns
+	summarizer := func(_ context.Context, msgs []ConversationMessage) (string, error) {
+		return "Here is a summary", nil
+	}
+
+	cfg := &HistoryConfig{
+		MaxTurns:           2,
+		Summarizer:         summarizer,
+		SummarizeThreshold: 0,
+	}
+
+	got := compactHistory(context.Background(), h, cfg)
+
+	// Structure: initial, summary, then kept turns
+	if got[0].Role != "user" || got[0].Content != "initial" {
+		t.Errorf("first message should be initial prompt, got: %+v", got[0])
+	}
+	if got[1].Role != "user" || got[1].Content != "[Previous conversation summary]\nHere is a summary" {
+		t.Errorf("second message should be summary, got: %+v", got[1])
+	}
+	// Rest should be the kept turns
+	if got[2].Role != "assistant" {
+		t.Errorf("third message should be assistant turn, got role: %s", got[2].Role)
+	}
+}
+
+func TestSummarizerErrorFallsBackToDropBehavior(t *testing.T) {
+	h := makeHistory(6)
+	summarizer := func(_ context.Context, msgs []ConversationMessage) (string, error) {
+		return "", errors.New("summarizer failed")
+	}
+
+	cfg := &HistoryConfig{
+		MaxTurns:           2,
+		Summarizer:         summarizer,
+		SummarizeThreshold: 0,
+	}
+
+	got := compactHistory(context.Background(), h, cfg)
+
+	// Should fall back to normal drop behavior: initial + 2 kept turns (4 msgs) = 5
+	if len(got) != 5 {
+		t.Errorf("expected 5 messages on summarizer error, got %d", len(got))
+	}
+
+	// No summary message should be present
+	if got[1].Role == "user" {
+		t.Error("no summary message should be present when summarizer returns error")
+	}
+}
+
+func TestNilSummarizerPreservesExistingBehavior(t *testing.T) {
+	h := makeHistory(6)
+
+	cfg := &HistoryConfig{
+		MaxTurns:   2,
+		Summarizer: nil,
+	}
+
+	got := compactHistory(context.Background(), h, cfg)
+
+	// Same as before: initial + 2 kept turns (4 msgs) = 5
+	if len(got) != 5 {
+		t.Errorf("expected 5 messages with nil summarizer, got %d", len(got))
+	}
+
+	// First should be initial, second should be assistant (no summary injected)
+	if got[0].Content != "initial" {
+		t.Errorf("first message should be initial, got: %q", got[0].Content)
+	}
+	if got[1].Role != "assistant" {
+		t.Errorf("second message should be assistant (no summary), got role: %s", got[1].Role)
 	}
 }
