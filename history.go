@@ -120,7 +120,7 @@ func compactHistory(ctx context.Context, history []ConversationMessage, cfg *His
 // Only MaxTurns is applied; DropToolResults is not supported for APIAgent
 // because modifying anthropic.MessageParam tool-result blocks while keeping
 // the tool-use IDs valid is non-trivial and best handled via MaxTurns alone.
-func compactMessages(ctx context.Context, messages []anthropic.MessageParam, cfg *HistoryConfig) []anthropic.MessageParam {
+func compactMessages(_ context.Context, messages []anthropic.MessageParam, cfg *HistoryConfig) []anthropic.MessageParam {
 	if cfg == nil || cfg.MaxTurns == 0 {
 		return messages
 	}
