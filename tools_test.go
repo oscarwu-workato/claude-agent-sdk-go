@@ -114,8 +114,8 @@ func TestToolAnnotations_JSON(t *testing.T) {
 		Name:        "test",
 		Description: "test tool",
 		Annotations: &ToolAnnotations{
-			ReadOnly:    true,
-			SearchHint:  "file search",
+			ReadOnly:   true,
+			SearchHint: "file search",
 		},
 	}
 
