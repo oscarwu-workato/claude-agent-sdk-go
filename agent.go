@@ -259,7 +259,7 @@ func (a *Agent) runLoop(ctx context.Context, prompt string, events chan<- AgentE
 		}
 
 		// Apply history compaction before sending to the LLM
-		llmHistory := compactHistory(history, a.history)
+		llmHistory := compactHistory(ctx, history, a.history)
 
 		// Stream response from Claude, tracking LLM latency
 		llmStart := time.Now()
@@ -303,13 +303,16 @@ func (a *Agent) runLoop(ctx context.Context, prompt string, events chan<- AgentE
 		// Emit todos update if write_todos succeeded this turn
 		emitTodoEvents(a.todoStore, toolCalls, toolResults, events)
 
-		// Add tool results to full history
+		// Add tool results to full history, injecting any metadata messages
 		for _, tr := range toolResults {
 			history = append(history, ConversationMessage{
 				Role:       "tool",
 				ToolCallID: tr.ToolUseID,
 				Content:    tr.Content,
 			})
+			if tr.Metadata != nil {
+				history = append(history, tr.Metadata.InjectMessages...)
+			}
 		}
 
 		// Record turn metrics and emit with AgentEventTurnComplete
