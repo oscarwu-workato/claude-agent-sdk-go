@@ -11,8 +11,9 @@ import "context"
 type LLMProvider interface {
 	// Complete sends a chat request and returns the full response.
 	// onEvent, if non-nil, is called with streaming deltas as they arrive.
-	// Providers that support streaming should call onEvent for each chunk;
-	// providers that don't should call it once with the complete content.
+	// Streaming providers call onEvent for each content/tool chunk as it arrives.
+	// Non-streaming providers may ignore onEvent entirely; the ChatResponse is
+	// always the authoritative result regardless of whether onEvent was called.
 	Complete(ctx context.Context, req ChatRequest, onEvent ChatStreamCallback) (ChatResponse, error)
 
 	// Name returns a human-readable provider name (e.g., "anthropic", "openai").

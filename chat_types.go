@@ -10,8 +10,11 @@ const (
 	ChatRoleTool      ChatRole = "tool"
 )
 
-// ChatMessage is a provider-agnostic conversation message.
-// The agentic loop works with these; providers convert to their native format.
+// ChatMessage is a provider-agnostic conversation message used by APIAgent.
+// The agentic loop maintains a []ChatMessage history; providers convert to their native format.
+//
+// Note: ConversationMessage (agent.go) serves the same purpose for the CLI-based Agent.
+// Both types are intentionally separate — the CLI agent uses string Role; ChatMessage uses typed ChatRole.
 type ChatMessage struct {
 	// Role of the message sender.
 	Role ChatRole
@@ -90,7 +93,9 @@ type ChatStreamEvent struct {
 	Type ChatStreamEventType
 	// Content carries text for ContentDelta and ToolUseDelta events.
 	Content string
-	// ToolCall carries tool metadata for ToolUseStart and ToolUseEnd events.
+	// ToolCall carries tool information for ToolUseStart and ToolUseEnd events.
+	// On ToolUseStart: ID and Name are set; Input is nil (not yet accumulated).
+	// On ToolUseEnd: ID, Name, and fully-accumulated Input are all set.
 	ToolCall *ToolCall
 }
 
